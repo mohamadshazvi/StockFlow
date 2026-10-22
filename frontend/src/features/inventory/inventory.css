@@ -1,0 +1,6 @@
+.inventory-history { margin-top: 24px; }
+.inventory-history td { vertical-align: top; }
+.inventory-history td p { margin: 0 0 6px; overflow-wrap: anywhere; }
+.inventory-history code { font-size: 12px; overflow-wrap: anywhere; }
+.inventory-history th { white-space: nowrap; }
+.inventory-history td:last-child { min-width: 130px; max-width: 180px; }
