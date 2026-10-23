@@ -24,6 +24,14 @@ public class StockMovement {
         this.reason = reason; this.reference = reference; this.createdBy = createdBy; this.createdAt = Instant.now();
     }
     public UUID getId() { return id; }
+    public static StockMovement forOrder(UUID productId, UUID orderId, boolean cancellation, int quantity, String reference, UUID actor, Instant at) {
+        if (quantity <= 0) throw new IllegalArgumentException("Order quantity must be positive");
+        var movement = new StockMovement(productId, cancellation ? "ORDER_CANCELLATION" : "ORDER_CONFIRMATION",
+                cancellation ? quantity : -quantity, null, reference, actor);
+        movement.orderId = java.util.Objects.requireNonNull(orderId);
+        movement.createdAt = at;
+        return movement;
+    }
     public UUID getProductId() { return productId; }
     public String getType() { return type; }
     public int getQuantityDelta() { return quantityDelta; }

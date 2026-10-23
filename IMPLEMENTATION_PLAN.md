@@ -127,12 +127,20 @@ Verification: all **50 backend tests** passed against PostgreSQL, including 12 o
 
 ## 8. Phase 6 — Transactional order lifecycle
 
-- [ ] Implement confirmation with order lock then sorted product locks.
-- [ ] Implement cancellation of drafts and confirmed orders; preserve audit metadata.
-- [ ] Enforce effect-idempotent repeat confirmation/cancellation and unique movement protection.
-- [ ] Handle product archival and insufficient stock after locks are acquired.
-- [ ] Translate lock/deadlock timeouts after rollback into retryable resource conflicts.
-- [ ] Build explicit confirm/cancel dialogs and refresh orders/products/history/dashboard after success.
+- [x] Implement confirmation with order lock then sorted product locks.
+- [x] Implement cancellation of drafts and confirmed orders; preserve audit metadata.
+- [x] Enforce effect-idempotent repeat confirmation/cancellation and unique movement protection.
+- [x] Handle product archival and insufficient stock after locks are acquired.
+- [x] Translate lock/deadlock timeouts after rollback into retryable resource conflicts.
+- [x] Build explicit confirm/cancel dialogs and refresh orders/products/history/dashboard after success.
+
+### Implementation progress (2026-10-23)
+
+Added confirm/cancel APIs for both roles with server-owned audit metadata and empty-body contracts. Transactions lock the order before UUID-sorted products and validate all items before applying effects. Confirmation deducts active-product quantities; confirmed cancellation restores stock even for archived products, checks overflow, and retains confirmation metadata. Draft cancellation has no inventory effects. Repeated operations return current state without duplicate effects or changed audit metadata; cancelled orders cannot be confirmed. The existing unique order-effect index remains a final database guard. All state/balance/movement writes roll back together. Controller advice maps lock/deadlock and query/transaction timeout exceptions to RESOURCE_BUSY after the transactional service unwinds.
+
+React now has explicit action dialogs, status/actor timelines, current product/history links, duplicate-submission guards, and committed-response rendering. Success invalidates orders, products, movements and future dashboard queries. Conflicts/unknown outcomes require an explicit successful refresh before another write; failed recovery reads do not discard the dialog. No mutation auto-retries or optimistic stock updates. No new migration or account/data reset is required.
+
+Verification: **66 backend tests**, including **16 lifecycle PostgreSQL tests**, and **31 mocked-API browser tests** in installed Chrome passed, plus frontend lint/type-check/build. Lifecycle tests use an isolated disposable schema, independent committed transactions, start barriers, and bounded waits. A real lock timeout and observed deadlock validate recovery; fault injection on the second sorted movement checks rollback of previously flushed effects for both transitions. Balance-to-ledger reconciliation is asserted throughout. Live owner acceptance and GitHub CI execution remain separate, unverified checks.
 
 **Required PostgreSQL integration tests:**
 

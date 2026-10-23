@@ -2,12 +2,12 @@ import { useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../auth'
-import { Failure, Pager } from '../../components/Management'
+import { Failure, Modal, Pager } from '../../components/Management'
 import { ApiError } from '../../lib/api'
 
 type Product = { id: string; sku: string; name: string; unitPrice: string; stockQuantity: number }
 type Item = { id: string; productId: string; skuSnapshot: string; nameSnapshot: string; quantity: number; unitPriceSnapshot: string; lineTotal: string }
-type Order = { id: string; orderNumber: string; customerName: string | null; reference: string | null; status: string; currency: string; total: string; createdBy: string; createdAt: string; confirmedAt: string | null; cancelledAt: string | null; items: Item[] }
+type Order = { id: string; orderNumber: string; customerName: string | null; reference: string | null; status: string; currency: string; total: string; createdBy: string; confirmedBy: string | null; cancelledBy: string | null; createdAt: string; confirmedAt: string | null; cancelledAt: string | null; items: Item[] }
 type Page<T> = { content: T[]; page: number; size: number; totalElements: number; totalPages: number }
 type Line = { product: Product; quantity: string }
 function cents(value: string) { const [whole, fraction = ''] = value.split('.'); return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0')) }
@@ -58,9 +58,37 @@ export function OrderList() {
     </section></main>
 }
 
+function LifecycleDialog({ order, action, close, recorded, failed, refresh, blocked }: { order: Order; action: 'confirm' | 'cancel'; close: () => void; recorded: (saved: Order) => void; failed: () => void; refresh: () => Promise<boolean>; blocked: boolean }) {
+  const { request } = useAuth()
+  const submitting = useRef(false)
+  const [refreshing, setRefreshing] = useState(false), [refreshed, setRefreshed] = useState(false)
+  const mutation = useMutation({ mutationFn: () => request<Order>(`/orders/${order.id}/${action}`, { method: 'POST' }), retry: false, onSuccess: recorded, onError: failed, onSettled: () => { submitting.current = false } })
+  const uncertain = Boolean(mutation.error && (!(mutation.error instanceof ApiError) || mutation.error.status >= 500))
+  const allowed = action === 'confirm' ? order.status === 'DRAFT' : order.status !== 'CANCELLED'
+  const pending = mutation.isPending || refreshing
+  async function reconcile() { setRefreshing(true); try { if (await refresh()) { mutation.reset(); setRefreshed(true) } } finally { setRefreshing(false) } }
+  function submit(event: FormEvent) { event.preventDefault(); if (pending || blocked || !allowed || submitting.current) return; submitting.current = true; mutation.mutate() }
+  return <Modal title={action === 'confirm' ? 'Confirm order' : 'Cancel order'} close={close} pending={pending}>
+    <p><strong>{order.orderNumber}</strong> · Current state: {order.status}</p>
+    <p>{action === 'confirm' ? 'Confirming deducts the saved quantities from current stock. All products must still be active and have enough stock. Saved prices will not change.' : order.status === 'CONFIRMED' ? 'Cancelling restores all confirmed quantities, including archived products. Confirmation audit history is retained. This cannot be undone.' : 'Cancelling this draft does not change stock. A cancelled order cannot be confirmed.'}</p>
+    {uncertain ? <div role="alert" className="error"><strong>The result could not be confirmed.</strong><p>The operation may already have committed. Refresh this order before deciding what to do next. Repeating the same transition cannot apply stock twice, but requests are never retried automatically.</p></div> : <Failure error={mutation.error} />}
+    {blocked && <p className="message">Refresh the order and availability before retrying.</p>}
+    {refreshed && <p role="status">Order refreshed. Current state: {order.status}.</p>}
+    {!allowed && <p role="status">This action is no longer available for the current order state.</p>}
+    <form onSubmit={submit}><div className="form-actions"><button disabled={pending || blocked || !allowed}>{mutation.isPending ? 'Saving…' : action === 'confirm' ? 'Confirm and deduct stock' : 'Cancel order permanently'}</button><button type="button" className="secondary" disabled={pending} onClick={() => void reconcile()}>{refreshing ? 'Refreshing…' : 'Refresh order and availability'}</button><button type="button" className="secondary" disabled={pending} onClick={close}>Keep current state</button></div></form>
+  </Modal>
+}
+
 export function OrderDetail() {
-  const { id } = useParams(), { request } = useAuth()
+  const { id } = useParams(), { request } = useAuth(), cache = useQueryClient()
+  const [dialog, setDialog] = useState<'confirm' | 'cancel' | null>(null), [notice, setNotice] = useState(''), [needsRefresh, setNeedsRefresh] = useState(false)
   const query = useQuery({ queryKey: ['order', id], queryFn: ({ signal }) => request<Order>(`/orders/${id}`, { signal }), retry: false })
   const order = query.data
-  return <main><Link to="/orders">← Orders</Link>{query.isPending && <p role="status">Loading order…</p>}<Failure error={query.error} />{query.isError && <button onClick={() => void query.refetch()}>Retry order</button>}{order && <><h1>{order.orderNumber}</h1><section className="panel"><h2>{order.status} order</h2><p>Customer: {order.customerName ?? 'Not provided'}</p><p>Reference: {order.reference ?? 'Not provided'}</p><p className="message">Drafts do not reserve or deduct stock. Saved quantities and price snapshots are read-only. Confirmation and cancellation arrive in Phase 6.</p><div className="table-scroll"><table><thead><tr><th>Product snapshot</th><th>Quantity</th><th>Unit price</th><th>Line total</th></tr></thead><tbody>{order.items.map(item => <tr key={item.id}><td>{item.nameSnapshot}<p>{item.skuSnapshot}</p></td><td>{item.quantity}</td><td>{order.currency} {item.unitPriceSnapshot}</td><td>{order.currency} {item.lineTotal}</td></tr>)}</tbody></table></div><p><strong>Total: {order.currency} {order.total}</strong></p></section><section className="panel"><h2>Order timeline</h2><ol><li>Draft created: <time dateTime={order.createdAt}>{new Date(order.createdAt).toLocaleString()}</time> · Actor: <code>{order.createdBy}</code></li>{order.confirmedAt && <li>Confirmed: {new Date(order.confirmedAt).toLocaleString()}</li>}{order.cancelledAt && <li>Cancelled: {new Date(order.cancelledAt).toLocaleString()}</li>}</ol></section></>}</main>
+  function invalidateRelated() {
+    // Invalidate all stock-bearing views, including inactive cached product/history pages.
+    for (const key of ['orders', 'products', 'product', 'movements', 'dashboard']) void cache.invalidateQueries({ queryKey: [key] })
+  }
+  async function refresh() { const result = await query.refetch(); invalidateRelated(); if (result.isSuccess) { setNeedsRefresh(false); return true } return false }
+  function saved(value: Order) { cache.setQueryData(['order', id], value); setNeedsRefresh(false); setDialog(null); setNotice(`Order ${value.status.toLowerCase()}. Stock and history are being refreshed.`); invalidateRelated() }
+  return <main><Link to="/orders">← Orders</Link>{query.isPending && <p role="status">Loading order…</p>}<Failure error={query.error} />{(query.isError || needsRefresh) && <div className="message"><p>Order actions are paused until you refresh successfully.</p><button disabled={query.isFetching} onClick={() => void refresh()}>Refresh order</button></div>}{notice && <p role="status" className="message">{notice}</p>}{order && <><h1>{order.orderNumber}</h1><section className="panel"><div className="page-heading"><h2>{order.status} order</h2><div className="form-actions">{order.status === 'DRAFT' && <button disabled={query.isFetching || query.isError || needsRefresh} onClick={() => { setNotice(''); setDialog('confirm') }}>Confirm order</button>}{order.status !== 'CANCELLED' && <button className="secondary" disabled={query.isFetching || query.isError || needsRefresh} onClick={() => { setNotice(''); setDialog('cancel') }}>Cancel order</button>}</div></div><p>Customer: {order.customerName ?? 'Not provided'}</p><p>Reference: {order.reference ?? 'Not provided'}</p><p className="message">{order.status === 'DRAFT' ? 'Drafts do not reserve or deduct stock. Confirm to deduct the saved quantities.' : order.status === 'CONFIRMED' ? 'Stock was deducted on confirmation. Cancelling restores the saved quantities exactly once.' : 'This order is cancelled and cannot be confirmed again.'} Saved quantities and price snapshots are read-only.</p><div className="table-scroll"><table><thead><tr><th>Product snapshot</th><th>Quantity</th><th>Unit price</th><th>Line total</th></tr></thead><tbody>{order.items.map(item => <tr key={item.id}><td><Link to={`/products/${item.productId}`}>{item.nameSnapshot}</Link><p>{item.skuSnapshot}</p></td><td>{item.quantity}</td><td>{order.currency} {item.unitPriceSnapshot}</td><td>{order.currency} {item.lineTotal}</td></tr>)}</tbody></table></div><p><strong>Total: {order.currency} {order.total}</strong></p></section><section className="panel"><h2>Order timeline</h2><ol><li>Draft created: <time dateTime={order.createdAt}>{new Date(order.createdAt).toLocaleString()}</time> · Actor: <code>{order.createdBy}</code></li>{order.confirmedAt && <li>Confirmed: <time dateTime={order.confirmedAt}>{new Date(order.confirmedAt).toLocaleString()}</time> · Actor: <code>{order.confirmedBy}</code></li>}{order.cancelledAt && <li>Cancelled: <time dateTime={order.cancelledAt}>{new Date(order.cancelledAt).toLocaleString()}</time> · Actor: <code>{order.cancelledBy}</code></li>}</ol></section>{dialog && <LifecycleDialog order={order} action={dialog} close={() => setDialog(null)} recorded={saved} failed={() => { setNeedsRefresh(true); invalidateRelated() }} refresh={refresh} blocked={needsRefresh || query.isError || query.isFetching} />}</>}</main>
 }

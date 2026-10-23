@@ -27,7 +27,7 @@ public class OpenApiConfig {
 
     @Bean OpenAPI stockFlowApi() {
         return new OpenAPI().info(new Info().title("StockFlow REST API").version("v1")
-                .description("Sign in with /api/v1/auth/login, then paste the access token into Authorize. Monetary values are decimal strings; timestamps are UTC. Admins record stock receipts and adjustments; movements are immutable. Both roles create and read draft orders with saved price snapshots. Drafts do not reserve stock; confirmation/cancellation follow in Phase 6."))
+                .description("Sign in with /api/v1/auth/login, then paste the access token into Authorize. Monetary values are decimal strings; timestamps are UTC. Admins record stock receipts and adjustments; movements are immutable. Both roles create, confirm and cancel orders with saved price snapshots. Drafts do not reserve stock. Confirmation deducts stock and cancellation restores confirmed quantities atomically; repeated transitions never apply stock effects twice."))
                 .components(new Components().addSecuritySchemes("bearerAuth", new SecurityScheme()
                         .type(SecurityScheme.Type.HTTP).scheme("bearer").bearerFormat("JWT")));
     }

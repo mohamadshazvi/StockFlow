@@ -4,7 +4,7 @@ Inventory and order management portfolio application built with React, TypeScrip
 
 ## Current status
 
-Phase 5 adds draft orders with server-calculated totals, saved product/price snapshots, and order list/detail screens for both roles. Inventory, catalogue/account management, authentication, and OpenAPI remain available. Order confirmation/cancellation and dashboard metrics follow in later phases. This is a development application, not a production-ready release.
+Phase 6 adds transactional order confirmation/cancellation, exactly-once stock effects, and lifecycle audit history for both roles. Draft orders, inventory, catalogue/account management, authentication, and OpenAPI remain available. Dashboard metrics and final deployment/portfolio work follow in Phases 7–8. This is a development application, not a production-ready release.
 
 ## Prerequisites
 
@@ -131,7 +131,7 @@ compose.yaml             Local PostgreSQL
 - [Backend schema](BACKEND_SCHEMA.md)
 - [Implementation plan](IMPLEMENTATION_PLAN.md)
 
-Next: Phase 6 adds transactional order confirmation/cancellation and stock deduction/restoration.
+Next: Phase 7 adds real dashboard metrics and UI/accessibility completion.
 
 ## Supplier, catalogue, and account management (Phase 3)
 
@@ -170,7 +170,7 @@ Restart the backend and frontend normally, keeping your existing DB/JWT environm
 2. Search active products and add each product once. Set quantities from 1 to 1000000 (at most 100 distinct products).
 3. Optionally enter customer name/reference, then create the draft. Zero stock is allowed: **drafts neither reserve nor deduct stock**.
 4. The detail screen shows authoritative saved prices, line totals, total/currency, actor, and creation timeline. Later catalogue price/name changes or archival do not rewrite these snapshots.
-5. Browse Orders with status/date filters, sorting, and pagination. Drafts are read-only; confirmation, cancellation, and related stock effects remain Phase 6 work.
+5. Browse Orders with status/date filters, sorting, and pagination. Saved items/prices are read-only; use Phase 6 confirmation/cancellation actions below to change lifecycle state and stock.
 
 The form uses exact integer-cent arithmetic for its estimate. The server ignores that estimate and reads current product prices under consistently ordered product locks. Only server-generated monetary decimal strings are authoritative. Invalid/business-conflict responses preserve form inputs. Creation is **not idempotent**: after a lost response or server error, automatic retries and resubmission are disabled; inspect recent orders using your reference before creating another draft. A reference helps reconciliation but is not a unique idempotency key.
 
@@ -199,6 +199,37 @@ Success returns **201**, a usable `/api/v1/orders/{id}` Location header, and sav
 Order integration tests use an isolated disposable `orders_test_*` schema, preserving existing accounts and business data. Browser interaction tests mock APIs; they are not live end-to-end coverage.
 
 Local Phase 5 verification: **50 backend tests**, **23 mocked-API browser tests** in installed Chrome, and frontend lint/type-check/build passed. Live owner acceptance and GitHub CI execution have not been verified.
+
+## Order confirmation and cancellation (Phase 6)
+
+Restart the backend and frontend normally with your existing environment variables. No new migration, database reset, or admin bootstrap is needed: the existing V3/V4 schema supports these workflows. Your accounts and business data are retained.
+
+### Try the lifecycle
+
+1. As an admin, receive 10 units of an active product from its detail page.
+2. As either admin or staff, create a draft for 3 units in **Orders**. Stock stays at 10.
+3. Open the draft and select **Confirm order**. Review the dialog, then **Confirm and deduct stock**. Stock becomes 7; product history includes an `ORDER_CONFIRMATION` movement of -3 with the order number/ID, actor, and time.
+4. Select **Cancel order**, review the restoration warning, then **Cancel order permanently**. Stock returns to 10, a +3 `ORDER_CANCELLATION` movement appears, and the timeline keeps both confirmation and cancellation actors/times.
+5. Cancelling an unconfirmed draft has no stock effects. Cancelled orders cannot be confirmed again. Draft/item editing is not supported; create a new order if needed.
+
+### Lifecycle REST API
+
+- `POST /api/v1/orders/{id}/confirm` (admin or staff, **no body**): returns **200** with the committed order. A draft confirms only when every product is active and every quantity is available. One negative movement is recorded per item. A previously confirmed order returns its current representation without another deduction or audit changes.
+- `POST /api/v1/orders/{id}/cancel` (admin or staff, **no body**): returns **200** with the committed order. Drafts change state only. Confirmed orders restore every saved quantity, **including archived products**, with one positive movement per item. Confirmation metadata is retained. Already-cancelled orders return unchanged without additional effects.
+- Cancelled → confirmed returns **409 `INVALID_ORDER_STATE`**. Archived-product confirmation returns **409 `PRODUCT_ARCHIVED`**; insufficient stock returns **409 `INSUFFICIENT_STOCK`**. Restoration beyond integer stock bounds returns **409 `STOCK_LIMIT_EXCEEDED`** without cancelling or partially restoring anything; an admin must reconcile stock before retrying.
+- Invalid/nonempty bodies return 400; missing orders return 404; missing/inactive authentication returns 401. Actor/time are server-owned, never request fields.
+
+The transaction locks the order **first**, then all affected products individually in ascending UUID order, using the same product locks as manual inventory and catalogue edits. It checks state, activity, quantities, and overflow after locking, then commits balances, immutable movements, and state/audit metadata together. Failures roll back every effect. A unique `(order_id, product_id, type)` movement index adds database protection against duplicate effects. Competing orders cannot oversell.
+
+Lock waits are bounded (5-second lock timeout inside a 10-second transaction). Lock/deadlock/query/transaction timeout failures are translated **after rollback** to **409 `RESOURCE_BUSY`**; refresh and explicitly retry rather than automatically resending writes.
+
+### Lost responses and UI refresh
+
+Confirmation/cancellation are **effect-idempotent**, unlike draft creation or manual receipts: repeated requests cannot deduct/restore stock twice. A confirmation after a later cancellation still returns a state conflict, not a new confirmation. The first successful actors/times are preserved.
+
+The UI uses explicit action dialogs, blocks duplicate/pending submissions, and never optimistically changes stock/status or automatically retries mutations. Successful responses update the detail/timeline and invalidate order lists, products, stock history, and future dashboard queries. Product names on an order link to current balances/history. On conflicts or uncertain responses, action controls remain paused until an explicit order refresh succeeds. If refresh also fails, the recovery dialog remains available; do not assume a lost response means the operation failed.
+
+Local Phase 6 verification: **66 backend tests** passed against PostgreSQL, including 16 lifecycle tests for multi-item rollback, competing orders, repeated/concurrent transitions, confirm/cancel races, archived restoration, overflow, catalogue/adjustment races, duplicate movement protection, and real lock-timeout/deadlock recovery. **31 mocked-API browser tests** passed in installed Chrome, including staff confirmation/cancellation, timeline and stock-history refresh, conflicts, lost responses with failed follow-up reads, and pending submission guards. Frontend lint/type-check/build passed. Live owner acceptance and GitHub CI execution remain unverified.
 
 ## Inventory ledger (Phase 4)
 

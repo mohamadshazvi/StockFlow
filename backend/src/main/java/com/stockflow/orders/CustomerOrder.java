@@ -40,4 +40,13 @@ public class CustomerOrder {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getConfirmedAt() { return confirmedAt; }
     public Instant getCancelledAt() { return cancelledAt; }
+    /** Lifecycle service must hold this order's write lock and commit stock effects atomically. */
+    public void confirm(UUID actor, Instant at) {
+        if (!status.equals("DRAFT")) throw new IllegalStateException("Only a draft can be confirmed");
+        status = "CONFIRMED"; confirmedBy = actor; confirmedAt = at;
+    }
+    public void cancel(UUID actor, Instant at) {
+        if (status.equals("CANCELLED")) throw new IllegalStateException("Order already cancelled");
+        status = "CANCELLED"; cancelledBy = actor; cancelledAt = at;
+    }
 }

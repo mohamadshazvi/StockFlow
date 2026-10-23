@@ -24,7 +24,11 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(new ApiError("VALIDATION_FAILED", "Check the highlighted fields.", fields, (String) request.getAttribute("traceId")));
     }
 
-    @ExceptionHandler(org.springframework.dao.PessimisticLockingFailureException.class)
+    @ExceptionHandler({org.springframework.dao.PessimisticLockingFailureException.class,
+            org.springframework.dao.QueryTimeoutException.class,
+            org.springframework.transaction.TransactionTimedOutException.class,
+            jakarta.persistence.LockTimeoutException.class,
+            jakarta.persistence.PessimisticLockException.class})
     ResponseEntity<ApiError> busy(Exception exception, HttpServletRequest request) {
         return ResponseEntity.status(409).body(new ApiError("RESOURCE_BUSY", "This record is busy. Refresh and try again.", List.of(), (String) request.getAttribute("traceId")));
     }

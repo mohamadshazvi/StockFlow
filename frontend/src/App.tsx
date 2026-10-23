@@ -51,11 +51,11 @@ function Shell() {
 function Dashboard() {
   const { session } = useAuth()
   return <main>
-    <p className="eyebrow">WORKSPACE / PHASE 5</p><h1>Welcome to StockFlow.</h1>
+    <p className="eyebrow">WORKSPACE / PHASE 6</p><h1>Welcome to StockFlow.</h1>
     <p className="intro">You’re signed in as {session?.user.role === 'ADMIN' ? 'an administrator' : 'a staff member'}.</p>
     <section className="panel"><div className="panel-heading"><h2>Catalogue and inventory, connected.</h2><span className="badge ready">Authenticated</span></div>
       <p>Browse your catalogue, suppliers, and stock history.{session?.user.role === 'ADMIN' && ' Receive stock, record adjustments, and manage team access.'}</p>
-      <p>Create draft orders with saved prices from Orders. Confirmation, cancellation, and dashboard metrics follow in later phases.</p>
+      <p>Create, confirm, and cancel orders with saved prices from Orders. Confirmation deducts stock; cancellation restores confirmed quantities. Dashboard metrics follow in Phase 7.</p>
       <Link to="/products">Open product catalogue →</Link>
     </section>
   </main>
