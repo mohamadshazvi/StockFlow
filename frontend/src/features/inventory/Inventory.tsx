@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../auth'
 import { Failure, Modal, Pager } from '../../components/Management'
 import { ApiError } from '../../lib/api'
+import { useDirty } from '../../lib/useDirty'
 import './inventory.css'
 
 type Product = { id: string; name: string; stockQuantity: number; active: boolean }
@@ -14,6 +15,7 @@ const typeNames: Record<string, string> = { RECEIPT: 'Receipt', ADJUSTMENT: 'Adj
 function StockDialog({ product, type, close, recorded }: { product: Product; type: ManualType; close: () => void; recorded: (movement: Movement) => void }) {
   const { request } = useAuth(), cache = useQueryClient()
   const [quantity, setQuantity] = useState(''), [reason, setReason] = useState(''), [reference, setReference] = useState('')
+  useDirty(Boolean(quantity || reason || reference))
   const [validation, setValidation] = useState('')
   const [checked, setChecked] = useState(false)
   const delta = /^-?\d+$/.test(quantity) ? Number(quantity) : NaN

@@ -1,10 +1,11 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth'
 import { ProductList, ProductCreate, ProductDetail, ProductEdit } from './features/products/Products'
 import { SupplierList, SupplierCreate, SupplierDetail, SupplierEdit } from './features/suppliers/Suppliers'
 import { Users } from './features/users/Users'
 import { OrderList, OrderCreate, OrderDetail } from './features/orders/Orders'
+import { Dashboard } from './features/dashboard/Dashboard'
 import './App.css'
 
 function Login() {
@@ -43,27 +44,35 @@ function Protected() {
 function Shell() {
   const { session, logout } = useAuth()
   const [open, setOpen] = useState(false)
+  const menu = useRef<HTMLButtonElement>(null)
   const navigation = [['/dashboard', 'Dashboard'], ['/products', 'Products'], ['/suppliers', 'Suppliers'], ['/orders', 'Orders']]
   if (session?.user.role === 'ADMIN') navigation.push(['/users', 'Users'])
-  return <div className="app-shell"><aside className="sidebar"><Link className="brand" to="/dashboard">Stock<span>Flow</span></Link><button className="menu-toggle" aria-expanded={open} aria-controls="navigation" onClick={() => setOpen(!open)}>Menu</button><nav id="navigation" className={open ? 'expanded' : ''} aria-label="Main navigation">{navigation.map(([to, label]) => <NavLink key={to} to={to} onClick={() => setOpen(false)}>{label}</NavLink>)}</nav><p className="sidebar-note">Inventory & order management</p></aside><div className="workspace"><header className="workspace-header"><span className="muted">Team workspace</span><div className="account"><div><strong>{session?.user.email}</strong><span className="muted">{session?.user.role}</span></div><button className="secondary" onClick={logout}>Sign out</button></div></header><Outlet /></div></div>
+  return <div className="app-shell"><a className="skip-link" href="#main-content" onClick={event => { event.preventDefault(); const main = document.getElementById('main-content'); main?.focus(); main?.scrollIntoView() }}>Skip to main content</a><aside className="sidebar" onKeyDown={event => { if (event.key === 'Escape' && open) { setOpen(false); menu.current?.focus() } }}><Link className="brand" to="/dashboard">Stock<span>Flow</span></Link><button ref={menu} className="menu-toggle" aria-expanded={open} aria-controls="navigation" onClick={() => setOpen(!open)}>Menu</button><nav id="navigation" className={open ? 'expanded' : ''} aria-label="Main navigation">{navigation.map(([to, label]) => <NavLink key={to} to={to} onClick={() => setOpen(false)}>{label}</NavLink>)}</nav><p className="sidebar-note">Inventory & order management</p></aside><div className="workspace"><header className="workspace-header"><span className="muted">Team workspace</span><div className="account"><div><strong>{session?.user.email}</strong><span className="muted">{session?.user.role}</span></div><button className="secondary" onClick={() => { if (window.dispatchEvent(new Event('stockflow:signout', { cancelable: true }))) logout() }}>Sign out</button></div></header><Outlet /></div></div>
 }
 
-function Dashboard() {
-  const { session } = useAuth()
-  return <main>
-    <p className="eyebrow">WORKSPACE / PHASE 6</p><h1>Welcome to StockFlow.</h1>
-    <p className="intro">You’re signed in as {session?.user.role === 'ADMIN' ? 'an administrator' : 'a staff member'}.</p>
-    <section className="panel"><div className="panel-heading"><h2>Catalogue and inventory, connected.</h2><span className="badge ready">Authenticated</span></div>
-      <p>Browse your catalogue, suppliers, and stock history.{session?.user.role === 'ADMIN' && ' Receive stock, record adjustments, and manage team access.'}</p>
-      <p>Create, confirm, and cancel orders with saved prices from Orders. Confirmation deducts stock; cancellation restores confirmed quantities. Dashboard metrics follow in Phase 7.</p>
-      <Link to="/products">Open product catalogue →</Link>
-    </section>
-  </main>
+function RouteAccessibility() {
+  const { pathname } = useLocation()
+  useEffect(() => {
+    const main = document.querySelector('main')
+    if (main) { main.id = 'main-content'; main.tabIndex = -1; main.focus({ preventScroll: true }) }
+    window.scrollTo(0, 0)
+    document.title = `StockFlow — ${pathname.split('/')[1] || 'Workspace'}`
+  }, [pathname])
+  return null
 }
 
 
 function Home() { const { session } = useAuth(); return <Navigate to={session ? '/dashboard' : '/login'} replace /> }
 
 export default function App() {
-  return <AuthProvider><Routes><Route path="/" element={<Home />} /><Route path="/login" element={<Login />} /><Route element={<Protected />}><Route element={<Shell />}><Route path="/dashboard" element={<Dashboard />} /><Route path="/products" element={<ProductList />} /><Route path="/products/new" element={<ProductCreate />} /><Route path="/products/:id/edit" element={<ProductEdit />} /><Route path="/products/:id" element={<ProductDetail />} /><Route path="/suppliers" element={<SupplierList />} /><Route path="/suppliers/new" element={<SupplierCreate />} /><Route path="/suppliers/:id/edit" element={<SupplierEdit />} /><Route path="/suppliers/:id" element={<SupplierDetail />} /><Route path="/orders" element={<OrderList />} /><Route path="/orders/new" element={<OrderCreate />} /><Route path="/orders/:id" element={<OrderDetail />} /><Route path="/users" element={<Users />} /><Route path="*" element={<main><h1>Page not found</h1><Link to="/dashboard">Back to dashboard</Link></main>} /></Route></Route></Routes></AuthProvider>
+  return <AuthProvider><RouteAccessibility /><Routes>
+    <Route path="/" element={<Home />} /><Route path="/login" element={<Login />} />
+    <Route element={<Protected />}><Route element={<Shell />}>
+      <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/products" element={<ProductList />} /><Route path="/products/new" element={<ProductCreate />} /><Route path="/products/:id/edit" element={<ProductEdit />} /><Route path="/products/:id" element={<ProductDetail />} />
+      <Route path="/suppliers" element={<SupplierList />} /><Route path="/suppliers/new" element={<SupplierCreate />} /><Route path="/suppliers/:id/edit" element={<SupplierEdit />} /><Route path="/suppliers/:id" element={<SupplierDetail />} />
+      <Route path="/orders" element={<OrderList />} /><Route path="/orders/new" element={<OrderCreate />} /><Route path="/orders/:id" element={<OrderDetail />} /><Route path="/users" element={<Users />} />
+      <Route path="*" element={<main><h1>Page not found</h1><Link to="/dashboard">Back to dashboard</Link></main>} />
+    </Route></Route>
+  </Routes></AuthProvider>
 }

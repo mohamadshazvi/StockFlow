@@ -106,7 +106,7 @@ test('search, pagination and return navigation preserve list state', async ({ pa
 
 test('a protected request returning 401 clears the session', async ({ page }) => {
   await mockApi(page)
-  await page.route('**/api/v1/products?*', route => route.fulfill({ status: 401, json: { message: 'Please sign in again.' } }))
+  await page.route('**/api/v1/products?*', route => new URL(route.request().url()).searchParams.has('lowStock') && new URL(route.request().url()).searchParams.get('size') === '5' ? route.fallback() : route.fulfill({ status: 401, json: { message: 'Please sign in again.' } }))
   await login(page)
   await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible()
   await expect(page).toHaveURL(/login/)

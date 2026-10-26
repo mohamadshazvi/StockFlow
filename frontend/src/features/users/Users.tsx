@@ -3,15 +3,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth, type User } from '../../auth'
 import { Failure, Modal, Pager } from '../../components/Management'
+import { useDirty } from '../../lib/useDirty'
 
 function AccountDialog({ account, close }: { account?: User; close: () => void }) {
   const { request, session, refresh } = useAuth(), cache = useQueryClient(), navigate = useNavigate()
   const [email, setEmail] = useState(''), [password, setPassword] = useState('')
   const [role, setRole] = useState(account?.role ?? 'STAFF'), [active, setActive] = useState(account?.active ?? true)
   const [validation, setValidation] = useState('')
+  const allowNavigation = useDirty(Boolean(email || password || role !== (account?.role ?? 'STAFF') || active !== (account?.active ?? true)))
   const mutation = useMutation({
     mutationFn: () => request<User>(account ? `/users/${account.id}` : '/users', { method: account ? 'PATCH' : 'POST', body: JSON.stringify(account ? { role, active } : { email: email.trim(), password, role }) }),
     onSuccess: async saved => {
+      allowNavigation()
       setPassword('')
       await cache.invalidateQueries({ queryKey: ['users'] })
       if (saved.id === session?.user.id) {

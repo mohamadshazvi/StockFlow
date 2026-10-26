@@ -159,12 +159,20 @@ Use independent connections and synchronization barriers, with bounded test time
 
 ## 9. Phase 7 — Dashboard and UI completion
 
-- [ ] Implement summary metrics with correct active/confirmed-state definitions.
-- [ ] Compose recent orders and low-stock lists from existing endpoints.
-- [ ] Complete responsive shell, mobile tables/forms, status badges, and clear navigation.
-- [ ] Add accessible focus handling, labelled controls, keyboard dialogs, and async announcements.
-- [ ] Complete empty/search-empty/loading/error/permission states and dirty-form navigation warnings.
-- [ ] Verify money and timestamp formatting and document token reload behaviour.
+- [x] Implement summary metrics with correct active/confirmed-state definitions.
+- [x] Compose recent orders and low-stock lists from existing endpoints.
+- [x] Complete responsive shell, mobile tables/forms, status badges, and clear navigation.
+- [x] Add accessible focus handling, labelled controls, keyboard dialogs, and async announcements.
+- [x] Complete empty/search-empty/loading/error/permission states and dirty-form navigation warnings.
+- [x] Verify money and timestamp formatting and document token reload behaviour.
+
+### Implementation progress (2026-10-26)
+
+Added an authenticated dashboard summary endpoint with active-only product/threshold counts, current draft count, and exact currently-confirmed snapshot value (not revenue). One aggregate SQL statement ensures a consistent summary snapshot; currency mismatch fails safely instead of mixing amounts. React composes recent orders and paginated low-stock products from existing endpoints, preserves low-page URL state, and provides independent loading/error/retry/empty states. Product/order/inventory changes invalidate dashboard caches. No migration or account/data reset is required.
+
+Added responsive summary cards/forms/tables, status badges, mobile menu keyboard handling, skip link, main-content route focus, and modal focus wrapping/restoration. Router-level blockers now cover links and Back/Forward for dirty forms; explicit sign-out warns while forced session invalidation bypasses blocking. Successful saves navigate without discard prompts. Shared decimal-string money and timezone-labelled date formatting support dashboard/order lists; date filters apply explicitly after typing. README documents in-memory token reload behaviour and verification limitations.
+
+Verification: **73 PostgreSQL-backed backend tests** (seven new dashboard cases) and **42 API-mocked browser tests** passed, alongside frontend lint/type-check/build. Browser checks cover the receipt-to-order-to-dashboard/history journey, cancellation value removal, staff restrictions, error recovery, exact large monetary strings, unsaved navigation/sign-out and forced invalidation. Checked dashboard/dialog/order-form reflow at 360/768/1440px, keyboard navigation/focus, 2× CSS zoom, and sampled rendered contrast; generated dashboard screenshots were inspected. Native browser zoom, comprehensive assistive-technology/manual acceptance, live frontend-to-database acceptance, and GitHub CI execution for this phase remain separate checks, not claimed as completed.
 
 **Verification:** Browser smoke flow for login -> product receipt (admin setup) -> draft -> confirmation -> dashboard and history refresh. Check staff access, 360/768/1440px layouts, keyboard navigation, 200% zoom, and rendered contrast.
 

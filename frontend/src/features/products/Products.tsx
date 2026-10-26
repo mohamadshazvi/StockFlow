@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../../auth'
 import { ApiError } from '../../lib/api'
 import { SupplierPicker } from '../suppliers/Suppliers'
 import { InventoryPanel } from '../inventory/Inventory'
+import { useDirty } from '../../lib/useDirty'
+import { formatMoney } from '../../lib/format'
 import './products.css'
 
 type Product = {
@@ -16,8 +18,7 @@ type ProductPage = { content: Product[]; page: number; size: number; totalElemen
 type CreateProduct = { sku: string; name: string; description: string | null; unitPrice: string; lowStockThreshold: number; supplierId: string | null }
 
 function price(value: string) {
-  const [whole, fraction = '00'] = value.split('.')
-  return `LKR ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${fraction.padEnd(2, '0')}`
+  return formatMoney(value, 'LKR')
 }
 
 function StockStatus({ product }: { product: Product }) {
@@ -80,9 +81,10 @@ function ProductForm({ existing }: { existing?: Product }) {
   const [message, setMessage] = useState('')
   const summary = useRef<HTMLDivElement>(null)
   const dirty = JSON.stringify(values) !== JSON.stringify(initial)
+  const allowNavigation = useDirty(dirty)
   const mutation = useMutation({
     mutationFn: (body: CreateProduct) => request<Product>(existing ? `/products/${existing.id}` : '/products', { method: existing ? 'PATCH' : 'POST', body: JSON.stringify(body) }),
-    onSuccess: async product => { await cache.invalidateQueries({ queryKey: ['products'] }); cache.setQueryData(['product', product.id], product); navigate(`/products/${product.id}`, { replace: true, state: { created: !existing } }) },
+    onSuccess: async product => { await Promise.all([cache.invalidateQueries({ queryKey: ['products'] }), cache.invalidateQueries({ queryKey: ['dashboard'] })]); cache.setQueryData(['product', product.id], product); allowNavigation(); navigate(`/products/${product.id}`, { replace: true, state: { created: !existing } }) },
     onError: error => {
       const fields: Record<string, string> = {}
       if (error instanceof ApiError) {
@@ -94,26 +96,6 @@ function ProductForm({ existing }: { existing?: Product }) {
       window.setTimeout(() => summary.current?.focus(), 0)
     },
   })
-  useEffect(() => {
-    if (!dirty || mutation.isSuccess) return
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = '' }
-    const warnForLink = (event: MouseEvent) => {
-      const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
-      if (!(anchor instanceof HTMLAnchorElement) || anchor.target === '_blank') return
-      const destination = new URL(anchor.href)
-      if (destination.origin === window.location.origin && destination.pathname !== window.location.pathname
-          && !window.confirm('Discard your unsaved product?')) {
-        event.preventDefault()
-        event.stopPropagation()
-      }
-    }
-    window.addEventListener('beforeunload', warn)
-    document.addEventListener('click', warnForLink, true)
-    return () => {
-      window.removeEventListener('beforeunload', warn)
-      document.removeEventListener('click', warnForLink, true)
-    }
-  }, [dirty, mutation.isSuccess])
   if (session?.user.role !== 'ADMIN') return <main><h1>Access denied</h1><p>Only administrators can create products.</p><Link to="/products">Back to products</Link></main>
 
   function submit(event: FormEvent) {
@@ -128,7 +110,7 @@ function ProductForm({ existing }: { existing?: Product }) {
     if (Object.keys(validation).length) { setMessage('Check the highlighted fields.'); window.setTimeout(() => summary.current?.focus(), 0); return }
     mutation.mutate({ sku: values.sku.trim(), name: values.name.trim(), description: values.description.trim() || null, unitPrice: values.unitPrice.trim(), lowStockThreshold: Number(values.lowStockThreshold), supplierId: values.supplierId || null })
   }
-  function cancel() { if (!dirty || window.confirm('Discard your unsaved product?')) navigate('/products') }
+  function cancel() { navigate('/products') }
   function input(field: keyof typeof values) {
     return { id: field, value: values[field], disabled: mutation.isPending, 'aria-invalid': Boolean(errors[field]), 'aria-describedby': errors[field] ? `${field}-error` : undefined, onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setValues(previous => ({ ...previous, [field]: event.target.value })) }
   }
@@ -159,7 +141,7 @@ export function ProductDetail() {
   const listSearch = typeof location.state?.listSearch === 'string' ? location.state.listSearch : ''
   const { request, session } = useAuth()
   const cache = useQueryClient()
-  const archive = useMutation({ mutationFn: () => request<Product>(`/products/${id}`, { method: 'PATCH', body: JSON.stringify({ active: false }) }), onSuccess: async saved => { cache.setQueryData(['product', id], saved); await cache.invalidateQueries({ queryKey: ['products'] }) } })
+  const archive = useMutation({ mutationFn: () => request<Product>(`/products/${id}`, { method: 'PATCH', body: JSON.stringify({ active: false }) }), onSuccess: async saved => { cache.setQueryData(['product', id], saved); await Promise.all([cache.invalidateQueries({ queryKey: ['products'] }), cache.invalidateQueries({ queryKey: ['dashboard'] })]) } })
   const query = useQuery({ queryKey: ['product', id], queryFn: ({ signal }) => request<Product>(`/products/${id}`, { signal }), retry: false })
   const product = query.data
   const supplier = useQuery({ queryKey: ['supplier', product?.supplierId], queryFn: ({ signal }) => request<{ name: string; active: boolean }>(`/suppliers/${product?.supplierId}`, { signal }), enabled: Boolean(product?.supplierId), retry: false })

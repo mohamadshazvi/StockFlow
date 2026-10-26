@@ -4,7 +4,7 @@ Inventory and order management portfolio application built with React, TypeScrip
 
 ## Current status
 
-Phase 6 adds transactional order confirmation/cancellation, exactly-once stock effects, and lifecycle audit history for both roles. Draft orders, inventory, catalogue/account management, authentication, and OpenAPI remain available. Dashboard metrics and final deployment/portfolio work follow in Phases 7–8. This is a development application, not a production-ready release.
+Phase 7 adds a real operations dashboard, recent orders, paginated low-stock products, responsive layouts, keyboard navigation, and router-level unsaved-change warnings. Transactional orders, inventory, catalogue/account management, authentication, and OpenAPI remain available. Deployment and final portfolio delivery remain Phase 8 work. This is a development application, not a production-ready release.
 
 ## Prerequisites
 
@@ -131,7 +131,7 @@ compose.yaml             Local PostgreSQL
 - [Backend schema](BACKEND_SCHEMA.md)
 - [Implementation plan](IMPLEMENTATION_PLAN.md)
 
-Next: Phase 7 adds real dashboard metrics and UI/accessibility completion.
+Next: Phase 8 covers deployment, demo data, performance measurements, and final portfolio documentation.
 
 ## Supplier, catalogue, and account management (Phase 3)
 
@@ -161,6 +161,50 @@ PATCH uses a partial JSON object. Omitted fields stay unchanged. Explicit null c
 Catalogue changes lock the product row before loading/updating it. New supplier assignments lock and verify the supplier; archived suppliers cannot be newly assigned. Existing links to archived suppliers may be kept or cleared. Stock is changed through the Phase 4 inventory workflow below, never through product PATCH.
 
 Local Phase 3 verification: 25 backend tests (including simultaneous admin demotion) and 11 mocked-API browser interaction tests. Last-admin and concurrency tests create/drop their own unique `phase3_test_*` PostgreSQL schema, so the test database account must have schema-creation permission. Prefer a disposable development/test database; these tests do not modify the owner's real account. Full live-browser acceptance and a passing GitHub CI run remain separate verification steps.
+
+## Dashboard and usability (Phase 7)
+
+Restart the backend and frontend normally with your existing DB/JWT environment variables. No new migration, account bootstrap, or database reset is required. Sign in to open **Dashboard**.
+
+### Metrics and lists
+
+`GET /api/v1/dashboard/summary` is available to both admin and staff:
+
+```json
+{
+  "activeProductCount": 12,
+  "lowStockCount": 3,
+  "draftOrderCount": 2,
+  "confirmedOrderValue": "1350.00",
+  "currency": "LKR"
+}
+```
+
+- **Active products:** active catalogue records only; archived products are excluded.
+- **Low-stock products:** active products with stock **at or below** their individual threshold, including zero stock.
+- **Draft orders:** currently DRAFT orders; drafts never reserve stock.
+- **Confirmed order value:** exact sum of currently CONFIRMED order snapshots, **not collected revenue**. Cancelled orders are excluded, and later catalogue price edits/product archival do not reprice or remove confirmed orders.
+- All four aggregates come from one SQL statement so the summary observes one committed database snapshot. Unexpected confirmed-order currencies return **409 `CURRENCY_MISMATCH`** rather than silently adding unlike amounts; correct the business currency configuration, not the saved history.
+- Recent orders reuse `/orders?page=0&size=5&sort=createdAt,desc`; low-stock products reuse `/products?active=true&lowStock=true&size=5&sort=stockQuantity,asc` with pagination. Low-stock page state is preserved as `lowPage` in the dashboard URL.
+- Summary/list requests have separate loading/error/retry states. **Refresh dashboard** reloads all three. Metrics and lists are separate committed reads and can briefly differ during simultaneous updates; refresh to reconcile.
+- Stock/order/product mutations invalidate the relevant summary/list caches. No optimistic stock, status, or value changes are shown.
+
+### Navigation, formatting, and accessibility
+
+- Mobile menu exposes its expanded state, closes on Escape, and restores keyboard focus. A skip link and route-level main-content focus support keyboard navigation. Scrollable tables are keyboard reachable on the dashboard, catalogue, and order list.
+- Native modal dialogs contain Tab/Shift+Tab focus, support Escape when not saving, block pending dismissal, and restore focus to their trigger. Loading/results use status announcements; failures use alerts.
+- Product/supplier/draft forms warn on in-app navigation, including browser Back/Forward, and on reload/tab close. Inventory/account dialogs also warn on route/reload changes and confirm local dismissal. Successful saves navigate without a discard prompt. Explicit sign-out warns about unsaved inputs; forced session invalidation is never blocked by a dirty form.
+- The router now uses React Router's data-router provider to support proper navigation blockers. Passwords/tokens and unsaved form values are not persisted in browser storage.
+- Monetary summary/list values are grouped directly from decimal strings without floating-point conversion. API timestamps are UTC; dashboard/order-list times display the browser's local timezone and timezone label. Saved order prices/currency remain authoritative; catalogue forms retain the default LKR convention.
+- Order date filters apply on form submission rather than issuing invalid requests for every partially typed timestamp. Status/date/page/sort filters remain in the URL.
+- Tokens remain in memory only: **reloading requires signing in again**, and expiry or a 401 clears the session and cached data. The new UI does not add refresh tokens or persistent login.
+
+### Phase 7 verification
+
+- **73 backend tests** passed against PostgreSQL, including seven dashboard tests for zero values, thresholds, lifecycle changes, archival, exact large totals, role access, and currency mismatch. Dashboard tests run in an isolated disposable `dashboard_test_*` schema, preserving owner data.
+- **42 browser interaction tests** passed using installed Chrome and **mocked API responses**. The new smoke journey exercises login → receipt → draft → confirmation → dashboard/history → cancellation, plus staff restrictions, failed reads/retry, unsaved navigation/sign-out, and forced invalidation.
+- Dashboard, receipt-dialog bounds, and order forms were checked at **360/768/1440px**. Dashboard screenshots are generated in ignored `frontend/test-results/` directories. Keyboard menu/skip-link/modal focus checks, **2× CSS zoom reflow**, and sampled rendered-text contrast (at least 4.5:1) passed.
+- Frontend lint, TypeScript checking, and production build passed. These checks are **not** a comprehensive WCAG audit, assistive-technology certification, or a native browser-zoom test. Full manual screen-reader/zoom acceptance, live frontend-to-database acceptance, and a GitHub CI run for these changes remain unverified.
 
 ## Draft orders (Phase 5)
 

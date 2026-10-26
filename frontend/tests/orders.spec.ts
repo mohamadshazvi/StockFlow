@@ -79,6 +79,7 @@ test('uncertain committed draft is not retried and can be found in recent orders
   await expect(page.getByRole('alert')).toContainText('Do not submit again yet')
   await expect(page.getByRole('button', { name: 'Create draft', exact: true })).toBeDisabled()
   expect(api.writes).toHaveLength(1)
+  page.once('dialog', dialog => dialog.accept())
   await page.getByRole('link', { name: 'Inspect recent orders' }).click()
   await expect(page.getByText('CHECK-REF', { exact: true })).toBeVisible()
   expect(api.writes).toHaveLength(1)

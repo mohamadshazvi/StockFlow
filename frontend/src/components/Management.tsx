@@ -14,6 +14,21 @@ export function Pager({ page, totalPages, totalElements, onChange, pending = fal
 
 export function Modal({ title, children, close, pending = false }: { title: string; children: ReactNode; close: () => void; pending?: boolean }) {
   const dialog = useRef<HTMLDialogElement>(null)
-  useEffect(() => { dialog.current?.showModal() }, [])
-  return <dialog ref={dialog} aria-labelledby="dialog-title" onCancel={event => { event.preventDefault(); if (!pending) close() }}><div className="panel-heading"><h2 id="dialog-title">{title}</h2><button type="button" className="secondary" onClick={close} disabled={pending} aria-label="Close dialog">×</button></div>{children}</dialog>
+  useEffect(() => {
+    const previous = document.activeElement, element = dialog.current
+    element?.showModal()
+    return () => { element?.close(); if (previous instanceof HTMLElement && previous.isConnected) previous.focus() }
+  }, [])
+  return <dialog ref={dialog} aria-labelledby="dialog-title" onKeyDown={event => {
+    if (event.key !== 'Tab') return
+    const controls = [...event.currentTarget.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]')].filter(element => element.getClientRects().length > 0)
+    const first = controls[0], last = controls[controls.length - 1]
+    if (!first) { event.preventDefault(); event.currentTarget.focus(); return }
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+  }} onCancel={event => { event.preventDefault(); if (!pending) close() }}><div className="panel-heading"><h2 id="dialog-title">{title}</h2><button type="button" className="secondary" onClick={close} disabled={pending} aria-label="Close dialog">×</button></div>{children}</dialog>
+}
+
+export function StatusBadge({ status }: { status: string }) {
+  return <span className={`badge ${status === 'CONFIRMED' || status === 'Active' ? 'ready' : status === 'CANCELLED' || status === 'Archived' ? 'neutral' : ''}`}>{status}</span>
 }
