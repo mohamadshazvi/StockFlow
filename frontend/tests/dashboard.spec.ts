@@ -174,20 +174,21 @@ test('two-times CSS zoom reflows dashboard and rendered text meets contrast thre
 })
 
 test('unsaved draft guards link, browser back and signout; session reload requires login', async ({ page }) => {
+  const runWithDialog = async (action: () => Promise<void>, mode: 'accept' | 'dismiss' = 'dismiss') => {
+    const handled = page.waitForEvent('dialog').then(dialog => dialog[mode]())
+    await action()
+    await handled
+  }
   await setup(page)
   await page.getByRole('link', { name: 'Create draft order', exact: true }).first().click()
   await page.getByLabel('Reference (optional)', { exact: true }).fill('KEEP-INPUT')
-  page.once('dialog', dialog => dialog.dismiss())
-  await page.getByRole('link', { name: '← Orders', exact: true }).click()
+  await runWithDialog(() => page.getByRole('link', { name: '← Orders', exact: true }).click())
   await expect(page.getByLabel('Reference (optional)', { exact: true })).toHaveValue('KEEP-INPUT')
-  page.once('dialog', dialog => dialog.dismiss())
-  await page.goBack()
+  await runWithDialog(() => page.goBack())
   await expect(page).toHaveURL(/orders\/new/)
-  page.once('dialog', dialog => dialog.dismiss())
-  await page.getByRole('button', { name: 'Sign out', exact: true }).click()
+  await runWithDialog(() => page.getByRole('button', { name: 'Sign out', exact: true }).click())
   await expect(page.getByLabel('Reference (optional)', { exact: true })).toHaveValue('KEEP-INPUT')
-  page.once('dialog', dialog => dialog.accept())
-  await page.getByRole('link', { name: '← Orders', exact: true }).click()
+  await runWithDialog(() => page.getByRole('link', { name: '← Orders', exact: true }).click(), 'accept')
   await expect(page).toHaveURL(/\/orders$/)
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible()
