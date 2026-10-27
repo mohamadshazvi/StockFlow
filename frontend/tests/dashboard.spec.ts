@@ -177,17 +177,27 @@ test('unsaved draft guards link, browser back and signout; session reload requir
   await setup(page)
   await page.getByRole('link', { name: 'Create draft order', exact: true }).first().click()
   await page.getByLabel('Reference (optional)', { exact: true }).fill('KEEP-INPUT')
-  page.once('dialog', dialog => dialog.dismiss())
-  await page.getByRole('link', { name: '← Orders', exact: true }).click()
+  await Promise.all([
+    page.waitForEvent('dialog').then(dialog => dialog.dismiss()),
+    page.getByRole('link', { name: '← Orders', exact: true }).click(),
+  ])
   await expect(page.getByLabel('Reference (optional)', { exact: true })).toHaveValue('KEEP-INPUT')
-  page.once('dialog', dialog => dialog.dismiss())
-  await page.goBack()
+  // Back can resolve before the router opens its confirmation. Await handling
+  // explicitly so the next action cannot register a second handler for it.
+  await Promise.all([
+    page.waitForEvent('dialog').then(dialog => dialog.dismiss()),
+    page.goBack(),
+  ])
   await expect(page).toHaveURL(/orders\/new/)
-  page.once('dialog', dialog => dialog.dismiss())
-  await page.getByRole('button', { name: 'Sign out', exact: true }).click()
+  await Promise.all([
+    page.waitForEvent('dialog').then(dialog => dialog.dismiss()),
+    page.getByRole('button', { name: 'Sign out', exact: true }).click(),
+  ])
   await expect(page.getByLabel('Reference (optional)', { exact: true })).toHaveValue('KEEP-INPUT')
-  page.once('dialog', dialog => dialog.accept())
-  await page.getByRole('link', { name: '← Orders', exact: true }).click()
+  await Promise.all([
+    page.waitForEvent('dialog').then(dialog => dialog.accept()),
+    page.getByRole('link', { name: '← Orders', exact: true }).click(),
+  ])
   await expect(page).toHaveURL(/\/orders$/)
   await page.reload()
   await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible()
